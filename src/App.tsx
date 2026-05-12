@@ -1,46 +1,37 @@
 import { useState, useEffect } from 'react';
-import { Laptop, AlertCircle, CheckCircle, Lock, ClipboardList, X, Wifi, WifiOff, ChevronRight, Clock, StickyNote, UserPlus } from 'lucide-react';
+import {
+  Laptop, AlertCircle, CheckCircle, 
+  Lock, ClipboardList, X, 
+  Wifi, WifiOff, ChevronRight, Info, Clock
+} from 'lucide-react';
 
 type View = 'menu' | 'checkout' | 'check-in' | 'confirmation';
 type ActionType = 'checkout' | 'check-in';
 
-// NEW: We upgraded the memory to hold detailed records!
+// NEW: We define exactly what a "Checkout Record" looks like
 type CheckoutRecord = {
   number: string;
   studentName: string;
-  note: string;
-  checkoutTime: number; // Saves the exact millisecond it was checked out
+  timestamp: number;
 };
 
 export default function App() {
-  // Navigation & UI State
   const [view, setView] = useState<View>('menu');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [lastAction, setLastAction] = useState<ActionType | null>(null);
 
-  // Form State
+  // --- Live "Database" State (Upgraded to hold objects) ---
+  const [checkedOutList, setCheckedOutList] = useState<CheckoutRecord[]>([]);
   const [checkoutNum, setCheckoutNum] = useState('');
   const [checkinNum, setCheckinNum] = useState('');
   const [studentName, setStudentName] = useState('');
-  const [checkoutNote, setCheckoutNote] = useState(''); // NEW: Note state
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Database State (Upgraded to hold objects instead of just numbers)
-  const [checkedOutList, setCheckedOutList] = useState<CheckoutRecord[]>([]);
-
-  // Confirmation Pop-Up State
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmActionType, setConfirmActionType] = useState<'checkout' | 'check-in'>('checkout');
 
-  // NEW: Live Clock for the countdown timers (Updates every 1 minute)
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Network Status Monitor
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -53,390 +44,322 @@ export default function App() {
   }, []);
 
   const formatNum = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 2);
-    return digits ? parseInt(digits, 10).toString() : '';
+     let clean = val.replace(/\D/g, '');
+     if (clean.length > 2) clean = clean.slice(0, 2);
+     if (clean !== '') {
+        const num = parseInt(clean, 10);
+        if (num === 0) clean = '';
+        else clean = num.toString();
+     }
+     return clean;
   };
 
-  // 1. Prepare Check Out
-  const handlePrepareCheckout = () => {
-    if (!checkoutNum || !studentName.trim()) {
-      setErrorMsg('Please fill in both Name and Number.');
-      return;
-    }
-    // Check if the number already exists in our upgraded list
-    if (checkedOutList.some(record => record.number === checkoutNum)) {
-      setErrorMsg(`Chromebook #${checkoutNum} is already checked out!`);
-      return;
-    }
-    setErrorMsg('');
-    setConfirmActionType('checkout');
-    setShowConfirm(true); 
+  const closeToMenu = () => {
+     setErrorMsg('');
+     setCheckoutNum('');
+     setCheckinNum('');
+     setStudentName('');
+     setView('menu');
   };
 
-  // 2. Prepare Check In
-  const handlePrepareCheckin = () => {
-    if (!checkinNum) {
-      setErrorMsg('Please enter a Chromebook number.');
-      return;
-    }
-    if (!checkedOutList.some(record => record.number === checkinNum)) {
-      setErrorMsg(`Chromebook #${checkinNum} is not currently checked out.`);
-      return;
-    }
-    setErrorMsg('');
-    setConfirmActionType('check-in');
-    setShowConfirm(true);
+  const handleCheckout = () => {
+     if (!checkoutNum || !studentName) {
+        setErrorMsg('Please enter both the number and name.');
+        return;
+     }
+     // We now check if any record in the list has this number
+     if (checkedOutList.some(record => record.number === checkoutNum)) {
+        setErrorMsg(`Chromebook #${checkoutNum} is already checked out!`);
+        return;
+     }
+     setConfirmActionType('checkout');
+     setShowConfirmModal(true);
   };
 
-  // 3. Execute Action
+  const handleCheckin = () => {
+     if (!checkinNum) {
+        setErrorMsg('Please enter a Chromebook number.');
+        return;
+     }
+     if (!checkedOutList.some(record => record.number === checkinNum)) {
+        setErrorMsg(`Chromebook #${checkinNum} is NOT checked out!`);
+        return;
+     }
+     setConfirmActionType('check-in');
+     setShowConfirmModal(true);
+  };
+
   const executeAction = () => {
-    setShowConfirm(false);
+     setShowConfirmModal(false);
 
-    if (confirmActionType === 'checkout') {
-      const newRecord: CheckoutRecord = {
-        number: checkoutNum,
-        studentName: studentName,
-        note: checkoutNote,
-        checkoutTime: Date.now() // Stamps the exact current time
-      };
-      setCheckedOutList([...checkedOutList, newRecord]);
-      setLastAction('checkout');
-      setView('confirmation');
-      
-      // If done from dashboard, hide the dashboard to show success screen
-      if (showDashboard) setShowDashboard(false);
-    } else {
-      setCheckedOutList(checkedOutList.filter(record => record.number !== checkinNum));
-      setLastAction('check-in');
-      setView('confirmation');
-    }
-  };
-
-  const resetToMenu = () => {
-    setCheckoutNum('');
-    setCheckinNum('');
-    setStudentName('');
-    setCheckoutNote('');
-    setErrorMsg('');
-    setView('menu');
-  };
-
-  // NEW: Calculate Time Remaining Logic
-  const getTimerDisplay = (checkoutTime: number) => {
-    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
-    const elapsedMs = now - checkoutTime;
-    const timeLeftMs = twentyFourHoursMs - elapsedMs;
-
-    if (timeLeftMs <= 0) return { text: 'OVERDUE', color: 'text-red-600 bg-red-100' };
-
-    const hoursLeft = Math.floor(timeLeftMs / (1000 * 60 * 60));
-    const minutesLeft = Math.floor((timeLeftMs % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (hoursLeft < 2) return { text: `${hoursLeft}h ${minutesLeft}m left`, color: 'text-orange-600 bg-orange-100' };
-    return { text: `${hoursLeft}h ${minutesLeft}m left`, color: 'text-emerald-600 bg-emerald-100' };
+     if (confirmActionType === 'checkout') {
+        // NEW: Create a full package of data when checking out
+        const newRecord: CheckoutRecord = {
+           number: checkoutNum,
+           studentName: studentName,
+           timestamp: Date.now() // Captures the exact moment they confirm
+        };
+        setCheckedOutList([...checkedOutList, newRecord]);
+        setLastAction('checkout');
+        setView('confirmation');
+     } else {
+        // NEW: Filter out the specific record by number
+        setCheckedOutList(checkedOutList.filter(record => record.number !== checkinNum));
+        setLastAction('check-in');
+        setView('confirmation');
+     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center p-6 font-sans">
-      {/* Top Header */}
-      <header className="w-full max-w-md flex justify-between items-center mb-8">
-        <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-3">
           <div className="bg-blue-600 p-2 rounded-lg">
             <Laptop className="text-white w-6 h-6" />
           </div>
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight">ChromeTrack</h1>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-black tracking-tight text-slate-900 leading-none">Chrome<span className="text-blue-600 font-medium">Track</span></h1>
+            <span className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mt-1">ASBJKT TECHNOLOGY • Beta 1.5.5</span>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-3">
-          {view === 'menu' && (
-            <button 
-              onClick={() => {
-                // Pre-clear form for dashboard use
-                setCheckoutNum(''); setStudentName(''); setCheckoutNote(''); setErrorMsg('');
-                setShowDashboard(true);
-              }}
-              className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition"
-            >
-              <ClipboardList className="w-6 h-6" />
-            </button>
-          )}
-          {isOnline ? <Wifi className="text-emerald-500 w-5 h-5" /> : <WifiOff className="text-red-500 w-5 h-5" />}
+        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isOnline ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+          {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+          {isOnline ? 'Online' : 'Offline'}
         </div>
       </header>
 
-      {/* MAIN MENU */}
-      {view === 'menu' && (
-        <main className="w-full max-w-md flex flex-col gap-4">
-          <button 
-            onClick={() => { setView('checkout'); setErrorMsg(''); }}
-            className="group flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-blue-100 p-4 rounded-full text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <Laptop className="w-7 h-7" />
-              </div>
-              <div className="text-left">
-                <h2 className="text-lg font-bold text-slate-800">Check Out</h2>
-                <p className="text-sm text-slate-500">Take a Chromebook</p>
-              </div>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center p-6 w-full max-w-md mx-auto">
+        {view === 'menu' && (
+          <div className="w-full space-y-4">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-slate-900">Chromebook Station</h2>
+              <p className="text-slate-300 text-sm">Please select your action below</p>
             </div>
-            <ChevronRight className="text-slate-400 group-hover:text-blue-500" />
-          </button>
-
-          <button 
-            onClick={() => { setView('check-in'); setErrorMsg(''); }}
-            className="group flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-emerald-100 p-4 rounded-full text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                <CheckCircle className="w-7 h-7" />
-              </div>
-              <div className="text-left">
-                <h2 className="text-lg font-bold text-slate-800">Check In</h2>
-                <p className="text-sm text-slate-500">Return a Chromebook</p>
-              </div>
-            </div>
-            <ChevronRight className="text-slate-400 group-hover:text-emerald-500" />
-          </button>
-        </main>
-      )}
-
-      {/* CHECKOUT VIEW */}
-      {view === 'checkout' && (
-        <main className="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-4">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-slate-800">Check Out</h2>
-            <button onClick={resetToMenu} className="text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1"><X className="w-5 h-5"/></button>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-2">Student Name</label>
-              <input 
-                type="text" placeholder="First & Last Name" value={studentName}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                onChange={(e) => { setErrorMsg(''); setStudentName(e.target.value); }}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-2">Chromebook Number</label>
-              <input 
-                type="text" inputMode="numeric" placeholder="(e.g. 10)" value={checkoutNum}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xl font-bold"
-                onChange={(e) => { setErrorMsg(''); setCheckoutNum(formatNum(e.target.value)); }}
-              />
-            </div>
-
-            {/* NEW: Note Input */}
-            <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-2">Note (Optional)</label>
-              <input 
-                type="text" placeholder="e.g. Missing charger, scratched screen..." value={checkoutNote}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                onChange={(e) => setCheckoutNote(e.target.value)}
-              />
-            </div>
-
-            {errorMsg && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg text-sm font-medium">
-                <AlertCircle className="w-5 h-5 shrink-0" />
-                <p>{errorMsg}</p>
-              </div>
-            )}
-
-            <button 
-              onClick={handlePrepareCheckout}
-              className="w-full mt-4 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-200 transition-all active:scale-[0.98]"
-            >
-              Continue
+            <button onClick={() => { closeToMenu(); setView('checkout'); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-6 rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center gap-4 group">
+               <div className="bg-white/20 p-3 rounded-xl group-hover:bg-white/30 transition-colors"><Laptop /></div>
+               <div className="text-left"><div className="font-bold text-lg">Check Out</div><div className="text-blue-100 text-xs">Take a Chromebook</div></div>
+               <ChevronRight className="ml-auto opacity-50" />
+            </button>
+            <button onClick={() => { closeToMenu(); setView('check-in'); }} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white p-6 rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center gap-4 group">
+               <div className="bg-white/20 p-3 rounded-xl group-hover:bg-white/30 transition-colors"><CheckCircle /></div>
+               <div className="text-left"><div className="font-bold text-lg">Check In</div><div className="text-emerald-50 text-xs">Return a Chromebook</div></div>
+               <ChevronRight className="ml-auto opacity-50" />
+            </button>
+            <button onClick={() => setShowPasswordModal(true)} className="w-full mt-8 py-3 text-slate-600 hover:text-blue-700 text-sm font-semibold flex items-center justify-center gap-2 transition-colors">
+              <Lock className="w-4 h-4" /> Teacher Access
             </button>
           </div>
-        </main>
-      )}
+        )}
 
-      {/* CHECK-IN VIEW */}
-      {view === 'check-in' && (
-        <main className="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-4">
-           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-slate-800">Check In</h2>
-            <button onClick={resetToMenu} className="text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1"><X className="w-5 h-5"/></button>
+        {view === 'checkout' && (
+          <div className="w-full bg-white p-6 rounded-3xl shadow-xl border border-slate-200">
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">New Checkout</h2>
+                <button onClick={closeToMenu} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5"/></button>
+             </div>
+             {errorMsg && <div className="mb-4 p-3 bg-red-100 text-red-700 text-sm font-bold rounded-xl flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {errorMsg}</div>}
+             <div className="space-y-4">
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-2 pl-1">Chromebook Number</label>
+                   <input 
+                      type="text" 
+                      inputMode="numeric"
+                      placeholder="(e.g. 10)" 
+                      value={checkoutNum}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      onChange={(e) => {
+                        setErrorMsg('');
+                        setCheckoutNum(formatNum(e.target.value));
+                      }}
+                   />
+                </div>
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-2 pl-1">Student Full Name</label>
+                   <input 
+                      type="text" 
+                      placeholder="(e.g. John Doe)" 
+                      value={studentName}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" 
+                      onChange={(e) => {
+                        setErrorMsg('');
+                        setStudentName(e.target.value.replace(/[^a-zA-Z\s.]/g, ''));
+                      }}
+                   />
+                </div>
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-2 pl-1">Notes (Optional)</label>
+                   <textarea placeholder="(e.g. for Science class)" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none h-24"></textarea>
+                </div>
+                <button onClick={handleCheckout} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700">Review Checkout</button>
+             </div>
           </div>
+        )}
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-2">Chromebook Number</label>
-              <input 
-                type="text" inputMode="numeric" placeholder="(e.g. 10)" value={checkinNum}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xl font-bold"
-                onChange={(e) => { setErrorMsg(''); setCheckinNum(formatNum(e.target.value)); }}
-              />
+        {view === 'check-in' && (
+          <div className="w-full bg-white p-6 rounded-3xl shadow-xl border border-slate-200">
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Return Chromebook</h2>
+                <button onClick={closeToMenu} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5"/></button>
+             </div>
+             {errorMsg && <div className="mb-4 p-3 bg-red-100 text-red-700 text-sm font-bold rounded-xl flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {errorMsg}</div>}
+             <div className="space-y-4">
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-2 pl-1">Chromebook Number</label>
+                   <input 
+                      type="text" 
+                      inputMode="numeric"
+                      placeholder="(e.g. 10)"
+                      value={checkinNum} 
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" 
+                      onChange={(e) => {
+                        setErrorMsg('');
+                        setCheckinNum(formatNum(e.target.value));
+                      }}
+                   />
+                </div>
+                <button onClick={handleCheckin} className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-emerald-600">Review Check In</button>
+             </div>
+          </div>
+        )}
+
+        {view === 'confirmation' && (
+          <div className="text-center animate-in zoom-in duration-300">
+             <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-10 h-10" />
+             </div>
+             <h2 className="text-2xl font-bold mb-2">Success!</h2>
+             <p className="text-slate-500 mb-8">
+               {lastAction === 'checkout' ? 'The Chromebook has been checked out.' : 'The Chromebook has been checked in.'}
+             </p>
+             <button onClick={closeToMenu} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors">Home</button>
+          </div>
+        )}
+      </main>
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center animate-in zoom-in-95 duration-200">
+            <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+              <Info className="w-8 h-8" />
             </div>
-
-            {errorMsg && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg text-sm font-medium">
-                <AlertCircle className="w-5 h-5 shrink-0" />
-                <p>{errorMsg}</p>
-              </div>
-            )}
-
-            <button 
-              onClick={handlePrepareCheckin}
-              className="w-full mt-4 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-200 transition-all active:scale-[0.98]"
-            >
-              Continue
-            </button>
-          </div>
-        </main>
-      )}
-
-      {/* CONFIRMATION / SUCCESS VIEW */}
-      {view === 'confirmation' && (
-        <main className="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center animate-in zoom-in-95 duration-300">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-emerald-100 text-emerald-500 mb-6">
-            <CheckCircle className="w-10 h-10" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Success!</h2>
-          <p className="text-slate-500 mb-8 text-lg">
-            Chromebook <span className="font-bold text-slate-700">#{lastAction === 'checkout' ? checkoutNum : checkinNum}</span> has been 
-            {lastAction === 'checkout' ? ' checked out to ' : ' checked in.'}
-            {lastAction === 'checkout' && <span className="font-bold text-slate-700">{studentName}</span>}
-          </p>
-          <button 
-            onClick={resetToMenu}
-            className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-lg transition-colors"
-          >
-            Done
-          </button>
-        </main>
-      )}
-
-      {/* ADMIN DASHBOARD MODAL */}
-      {showDashboard && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-end sm:items-center p-4 z-40 animate-in fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-3xl sm:rounded-2xl h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-8 sm:zoom-in-95">
+            <h3 className="text-xl font-bold mb-6">Confirm Details</h3>
             
-            <div className="flex justify-between items-center p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <Lock className="w-5 h-5 text-slate-400"/> Admin Dashboard
-              </h2>
-              <button onClick={() => setShowDashboard(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:text-slate-800">
-                <X className="w-5 h-5"/>
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-              
-              {/* NEW: Admin Quick Check-Out Form */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-8">
-                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-blue-500"/> Quick Check Out
-                </h3>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <input 
-                    type="text" placeholder="Number (e.g. 10)" value={checkoutNum}
-                    onChange={(e) => { setErrorMsg(''); setCheckoutNum(formatNum(e.target.value)); }}
-                    className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <input 
-                    type="text" placeholder="Student Name" value={studentName}
-                    onChange={(e) => { setErrorMsg(''); setStudentName(e.target.value); }}
-                    className="flex-[2] p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 mt-3">
-                  <input 
-                    type="text" placeholder="Note (Optional)" value={checkoutNote}
-                    onChange={(e) => setCheckoutNote(e.target.value)}
-                    className="flex-[3] p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                  />
-                  <button 
-                    onClick={handlePrepareCheckout}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl py-3 px-4 transition"
-                  >
-                    Check Out
-                  </button>
-                </div>
-                {errorMsg && <p className="text-red-500 text-sm mt-3 font-medium text-center">{errorMsg}</p>}
-              </div>
-
-              {/* Advanced Checked Out List */}
-              <div className="flex justify-between items-end mb-4">
-                <h3 className="font-bold text-slate-700">Currently Checked Out</h3>
-                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
-                  {checkedOutList.length} total
-                </span>
-              </div>
-              
-              {checkedOutList.length === 0 ? (
-                <div className="text-center text-slate-400 py-10 bg-white rounded-xl border border-dashed border-slate-300">
-                  <p>All Chromebooks are secure and checked in.</p>
-                </div>
+            <div className="bg-slate-50 p-4 rounded-2xl text-left space-y-4 mb-8 border border-slate-200">
+              {confirmActionType === 'checkout' ? (
+                <>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Student Name</span>
+                    <span className="font-bold text-slate-800 text-lg">{studentName}</span>
+                  </div>
+                  <div className="w-full h-px bg-slate-200"></div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Chromebook</span>
+                    <span className="font-bold text-slate-800 text-xl">#{checkoutNum}</span>
+                  </div>
+                </>
               ) : (
-                <ul className="space-y-4">
-                  {/* We map over the UPGRADED list of records */}
-                  {checkedOutList.map(record => {
-                    const timer = getTimerDisplay(record.checkoutTime);
-                    
-                    return (
-                      <li key={record.number} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="bg-slate-100 p-3 rounded-xl text-slate-500">
-                              <Laptop className="w-6 h-6" />
-                            </div>
-                            <div>
-                              <span className="font-bold text-slate-800 text-xl block">#{record.number}</span>
-                              <span className="text-sm font-semibold text-slate-500">{record.studentName}</span>
-                            </div>
-                          </div>
-                          <span className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 ${timer.color}`}>
-                            <Clock className="w-3.5 h-3.5"/> {timer.text}
-                          </span>
-                        </div>
-                        
-                        {record.note && (
-                          <div className="mt-3 bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg flex items-start gap-2 border border-yellow-100">
-                            <StickyNote className="w-4 h-4 shrink-0 mt-0.5" />
-                            <p>{record.note}</p>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Returning Chromebook</span>
+                  <span className="font-bold text-slate-800 text-xl">#{checkinNum}</span>
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* CONFIRMATION MODAL */}
-      {showConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-xl animate-in zoom-in-95">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Are you sure?</h2>
-            <p className="text-slate-600 mb-8 text-lg">
-              You are about to <span className="font-bold">{confirmActionType === 'checkout' ? 'Check Out' : 'Check In'}</span> Chromebook 
-              <span className="font-bold text-slate-800"> #{confirmActionType === 'checkout' ? checkoutNum : checkinNum}</span>.
-            </p>
-            
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <button 
-                onClick={() => setShowConfirm(false)}
-                className="flex-1 px-4 py-4 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition"
+                onClick={() => setShowConfirmModal(false)} 
+                className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-bold hover:bg-slate-200"
               >
                 Cancel
               </button>
               <button 
-                onClick={executeAction}
-                className={`flex-1 px-4 py-4 text-white rounded-xl font-bold transition shadow-lg ${
-                  confirmActionType === 'checkout' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                onClick={executeAction} 
+                className={`flex-1 py-4 text-white rounded-xl font-bold shadow-lg ${
+                  confirmActionType === 'checkout' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-500 hover:bg-emerald-600'
                 }`}
               >
                 Confirm
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center">
+            <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+              <Lock />
+            </div>
+            <h3 className="text-xl font-bold mb-6">Teacher Portal</h3>
+            <input 
+              type="password" 
+              placeholder="Enter Password" 
+              className="w-full p-4 bg-slate-100 border-none rounded-2xl mb-4 text-center text-lg tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.target as HTMLInputElement).value === 'asbjkt25') {
+                  setShowPasswordModal(false);
+                  setShowDashboard(true);
+                }
+              }}
+            />
+            <button onClick={() => setShowPasswordModal(false)} className="text-slate-400 text-sm font-medium hover:text-slate-600">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showDashboard && (
+        <div className="fixed inset-0 bg-white z-50 flex flex-col">
+          <header className="p-6 border-b flex justify-between items-center bg-white">
+            <h2 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="text-blue-600" /> Teacher Dashboard</h2>
+            <button onClick={() => setShowDashboard(false)} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X /></button>
+          </header>
+          <div className="p-6 flex-1 bg-slate-50 overflow-auto">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                   <div className="text-slate-400 text-sm font-bold uppercase mb-1">Chromebooks Checked Out</div>
+                   <div className="text-3xl font-black">{checkedOutList.length}</div>
+                </div>
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                   <div className="text-slate-400 text-sm font-bold uppercase mb-1">System Status</div>
+                   <div className="text-green-500 font-bold flex items-center gap-2">
+                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                     Online
+                   </div>
+                </div>
+             </div>
+             <div className="mt-8">
+                {checkedOutList.length === 0 ? (
+                  <div className="text-center text-slate-400 py-20 border-2 border-dashed border-slate-200 rounded-3xl">
+                    No active checkouts found.
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 shadow-sm">
+                    <h3 className="font-bold text-slate-700 px-2">Currently Borrowed:</h3>
+                    
+                    {/* NEW: The Dashboard List now maps through the objects and shows Name and Time */}
+                    {checkedOutList.map(record => (
+                      <div key={record.number} className="p-4 bg-blue-50 border border-blue-100 text-blue-800 rounded-xl flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-lg">Chromebook #{record.number}</span>
+                          <span className="text-xs bg-blue-200 text-blue-800 px-3 py-1 rounded-md font-bold uppercase tracking-wider">Checked Out</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                           <span className="font-medium text-slate-700">Student:</span> 
+                           <span className="font-bold">{record.studentName}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-blue-600/80 font-medium">
+                           <Clock className="w-3.5 h-3.5" /> 
+                           {new Date(record.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </div>
+                      </div>
+                    ))}
+
+                  </div>
+                )}
+             </div>
           </div>
         </div>
       )}
