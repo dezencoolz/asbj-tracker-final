@@ -8,7 +8,6 @@ import {
 type View = 'menu' | 'checkout' | 'check-in' | 'confirmation';
 type ActionType = 'checkout' | 'check-in';
 
-// NEW: We define exactly what a "Checkout Record" looks like
 type CheckoutRecord = {
   number: string;
   studentName: string;
@@ -22,8 +21,22 @@ export default function App() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [lastAction, setLastAction] = useState<ActionType | null>(null);
 
-  // --- Live "Database" State (Upgraded to hold objects) ---
-  const [checkedOutList, setCheckedOutList] = useState<CheckoutRecord[]>([]);
+  // NEW: Added state for the password error message
+  const [passwordError, setPasswordError] = useState(false);
+
+  // UPGRADE: Uses "localStorage" so data survives a page refresh!
+  const [checkedOutList, setCheckedOutList] = useState<CheckoutRecord[]>(() => {
+    const saved = localStorage.getItem('chromebookTrackerData');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
   const [checkoutNum, setCheckoutNum] = useState('');
   const [checkinNum, setCheckinNum] = useState('');
   const [studentName, setStudentName] = useState('');
@@ -31,6 +44,11 @@ export default function App() {
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmActionType, setConfirmActionType] = useState<'checkout' | 'check-in'>('checkout');
+
+  // UPGRADE: Automatically saves to localStorage every time the list changes
+  useEffect(() => {
+    localStorage.setItem('chromebookTrackerData', JSON.stringify(checkedOutList));
+  }, [checkedOutList]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -67,7 +85,6 @@ export default function App() {
         setErrorMsg('Please enter both the number and name.');
         return;
      }
-     // We now check if any record in the list has this number
      if (checkedOutList.some(record => record.number === checkoutNum)) {
         setErrorMsg(`Chromebook #${checkoutNum} is already checked out!`);
         return;
@@ -93,17 +110,15 @@ export default function App() {
      setShowConfirmModal(false);
 
      if (confirmActionType === 'checkout') {
-        // NEW: Create a full package of data when checking out
         const newRecord: CheckoutRecord = {
            number: checkoutNum,
            studentName: studentName,
-           timestamp: Date.now() // Captures the exact moment they confirm
+           timestamp: Date.now() 
         };
         setCheckedOutList([...checkedOutList, newRecord]);
         setLastAction('checkout');
         setView('confirmation');
      } else {
-        // NEW: Filter out the specific record by number
         setCheckedOutList(checkedOutList.filter(record => record.number !== checkinNum));
         setLastAction('check-in');
         setView('confirmation');
@@ -120,7 +135,7 @@ export default function App() {
           </div>
           <div className="flex flex-col">
             <h1 className="text-xl font-black tracking-tight text-slate-900 leading-none">Chrome<span className="text-blue-600 font-medium">Track</span></h1>
-            <span className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mt-1">ASBJKT TECHNOLOGY • Beta 1.5.5</span>
+            <span className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mt-1">ASBJKT TECHNOLOGY • Beta 1.5.6</span>
           </div>
         </div>
         <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isOnline ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
@@ -287,6 +302,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Password Modal - NOW WITH ERRORS */}
       {showPasswordModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center">
@@ -294,22 +310,46 @@ export default function App() {
               <Lock />
             </div>
             <h3 className="text-xl font-bold mb-6">Teacher Portal</h3>
+            
             <input 
               type="password" 
               placeholder="Enter Password" 
-              className="w-full p-4 bg-slate-100 border-none rounded-2xl mb-4 text-center text-lg tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+              className={`w-full p-4 bg-slate-100 border-none rounded-2xl mb-2 text-center text-lg tracking-widest focus:ring-2 outline-none transition-all ${
+                passwordError ? 'focus:ring-red-500 ring-2 ring-red-500 bg-red-50' : 'focus:ring-blue-500'
+              }`}
+              onChange={() => setPasswordError(false)} // Clears error when you start typing again
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.target as HTMLInputElement).value === 'asbjkt25') {
-                  setShowPasswordModal(false);
-                  setShowDashboard(true);
+                if (e.key === 'Enter') {
+                  if ((e.target as HTMLInputElement).value === 'asbjkt25') {
+                    setShowPasswordModal(false);
+                    setShowDashboard(true);
+                    setPasswordError(false);
+                  } else {
+                    setPasswordError(true); // Triggers the error message!
+                  }
                 }
               }}
             />
-            <button onClick={() => setShowPasswordModal(false)} className="text-slate-400 text-sm font-medium hover:text-slate-600">Cancel</button>
+            
+            {/* NEW: Error Message Text */}
+            <div className="h-6 mb-4">
+              {passwordError && <span className="text-red-500 text-sm font-bold animate-pulse">Incorrect password. Try again.</span>}
+            </div>
+
+            <button 
+              onClick={() => {
+                setShowPasswordModal(false);
+                setPasswordError(false);
+              }} 
+              className="text-slate-400 text-sm font-medium hover:text-slate-600"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
+      {/* Dashboard */}
       {showDashboard && (
         <div className="fixed inset-0 bg-white z-50 flex flex-col">
           <header className="p-6 border-b flex justify-between items-center bg-white">
@@ -338,8 +378,6 @@ export default function App() {
                 ) : (
                   <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3 shadow-sm">
                     <h3 className="font-bold text-slate-700 px-2">Currently Borrowed:</h3>
-                    
-                    {/* NEW: The Dashboard List now maps through the objects and shows Name and Time */}
                     {checkedOutList.map(record => (
                       <div key={record.number} className="p-4 bg-blue-50 border border-blue-100 text-blue-800 rounded-xl flex flex-col gap-2">
                         <div className="flex items-center justify-between">
@@ -356,7 +394,6 @@ export default function App() {
                         </div>
                       </div>
                     ))}
-
                   </div>
                 )}
              </div>
